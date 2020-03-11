@@ -1,7 +1,6 @@
-from flask import Flask, jsonify, request, redirect, make_response
+from flask import Flask, jsonify, request, redirect, make_response, g
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
-from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import uuid
@@ -14,45 +13,20 @@ application = Flask(__name__)
 application.config['SQLALCHEMY_TRACK_MODIFICATIONS '] = False
 application.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mydb.db'
 db = SQLAlchemy(application)
-
-# ==================================================================================================
-# TEMPORARY CODE BLOCK
-# ==================================================================================================
-application.config['SECRET_KEY'] = 'thisissecret'
-
-
-def token_required(f):
-   @wraps(f)
-   def decorated(*args, **kwargs):
-      token = None
-
-      if 'token' in request.headers:
-         token = request.headers['token']
-
-      if not token:
-         return jsonify({'message': 'Token is missing!'}), 401
-
-      try:
-         data = jwt.decode(token, application.config['SECRET_KEY'])
-         current_user = User.query.filter_by(publicId=data['publicId']).first()
-      except:
-         return jsonify({'message': 'Token is invalid!'}), 401
-
-      return f(current_user, *args, **kwargs)
-
-   return decorated
-
+g.token = 'thisissecret'
+application.config['SECRET_KEY'] = g.token
 
 # ==================================================================================================
 # Define Databases Tables
 # ==================================================================================================
+# User Table
 class User(db.Model):
    id = db.Column(db.Integer, primary_key=True)
    publicId = db.Column(db.String(50), unique=True)
    username = db.Column(db.String(50))
    password = db.Column(db.String(80))
 
-
+# Transaction Table
 class Transaction(db.Model):
    id = db.Column(db.Integer, primary_key=True)
    amount = db.Column(db.Float())
@@ -67,45 +41,54 @@ class Transaction(db.Model):
 # ==================================================================================================
 @application.route('/')
 def index():
+   """
+   1. This function redirect the user to the home page
+   """
    return redirect('/home')
 
 
 @application.route('/user', methods=['POST'])
 def createUser():
+   """
+   2. This function create new user and commit it to database
+   """
    data = request.get_json()
-   print ('password', data)
-
-   print ('password', data['password'])
-   print ('username', data['username'])
+   # Generate a hashed password using sha256
    hashedPass = generate_password_hash(data['password'], method='sha256')
-
    newUser = User(publicId=str(uuid.uuid4()),
                   username=data['username'],
                   password=hashedPass)
-
+   # Commit new user
    db.session.add(newUser)
    db.session.commit()
-   return jsonify({'message' : 'New user created!'})
+   return jsonify({'message': 'New user created!'}), 201
 
 
-
-@application.route('/user/<public_id>', methods=['GET'])
-def getOneUser(public_id):
-   user = User.query.filter_by(id=public_id).first()
+@application.route('/user/<int:id>', methods=['GET'])
+def getOneUser(id):
+   """
+   3. This function return publicID, username and password of specific user.
+       NO Authorization is needed!
+   """
+   user = User.query.filter_by(id=id).first()
    userData = {
       'publicId': user.publicId,
       'username': user.username,
       'password': user.password,
    }
-   return jsonify({'users': userData})
+   return jsonify({'users': userData}), 200
 
 
 @application.route('/user/', methods=['GET'])
 def getAllUsers():
+   """
+   4. This function return ID, publicID, username and password of all users.
+      NO Authorization is needed!
+   """
    users = User.query.all()
 
+   # Run through all users and collect the necessary information to display
    output = []
-
    for user in users:
       userData = {
          'ID': user.id,
@@ -115,136 +98,176 @@ def getAllUsers():
       }
       output.append(userData)
 
-   return jsonify({'users': output})
+   return jsonify({'users': output}), 200
 
 
-@application.route('/user/<int:public_id>', methods=['DELETE'])
+@application.route('/user/<int:int:id>', methods=['DELETE'])
 @token_required
-def deleteUser(current_user, public_id):
-   if not current_user.id == public_id:
+def deleteUser(currentUser, id):
+   """
+   5. This function deletes an user account, which means it deletes user and all its transactions.
+      Any user have the authority to delete only its own user.
+      Authorization is needed!
+   """
+   # If the account does not belong to current user
+   if not currentUser.id == id:
       return jsonify({'message': "Fail to delete this user: Only the owner of this account can "
-                                 "delete it!"}),401
+                                 "delete it!"}), 401
 
-   user = User.query.filter_by(id=public_id).first()
-   Transaction.query.filter_by(userId=current_user.id).delete()
+   # Delete User from User table and all rows from transaction table that belong to this user
+   user = User.query.filter_by(id=id).first()
+   Transaction.query.filter_by(userId=currentUser.id).delete()
 
    db.session.delete(user)
    db.session.commit()
-   return jsonify({'message' : 'The user deleted!'})
+
+   return jsonify({'message': 'The user deleted!'}), 200
 
 
 @application.route('/login')
 def login():
+   """
+   6. This function login a user and create a token for 30 minutes
+   """
    auth = request.authorization
+   # ===============================================================================================
+   # 1. Check if both field is provided, username and password
+   # ===============================================================================================
    if not auth or not auth.username or not auth.password:
       return make_response('Could not verify',
-                          401,
-                          {'WWW-Authenticate' : 'Basic realm="Login required!"'})
-
-   user = User.query.filter_by(username=auth.username).first()
-
-   if not user:
-       return make_response('Could not verify',
                            401,
-                           {'WWW-Authenticate' : 'Basic realm="Login required!"'})
+                           {'WWW-Authenticate': 'Basic realm="Login required!"'})
 
-   if check_password_hash(user.password, auth.password):
-      token = jwt.encode({'publicId' : user.publicId,
-                          'exp' : datetime.utcnow() + timedelta(minutes=30)},
-                           application.config['SECRET_KEY'])
+   # ===============================================================================================
+   # 2. Check if this user exist
+   # ===============================================================================================
+   user = User.query.filter_by(username=auth.username).first()
+   if not user:
+      return make_response('Could not verify',
+                           401,
+                           {'WWW-Authenticate': 'Basic realm="Login required!"'})
 
-      return jsonify({'token' : token.decode('UTF-8')})
+   # ===============================================================================================
+   # 3. Check if the password is correct
+   # ===============================================================================================
+   if not check_password_hash(user.password, auth.password):
+      return make_response('Could not verify',
+                           401,
+                           {'WWW-Authenticate': 'Basic realm="Login required!"'})
 
-   return make_response('Could not verify',
-                       401,
-                       {'WWW-Authenticate' : 'Basic realm="Login required!"'})
+   # ===============================================================================================
+   # 4. Generate token for this user for 30 minutes
+   # ===============================================================================================
+   token = jwt.encode({'publicId': user.publicId,
+                       'exp': datetime.utcnow() + timedelta(minutes=30)},
+                      application.config['SECRET_KEY'])
+   # Return the token
+   return jsonify({'token': token.decode('UTF-8')}), 200
 
 
 @application.route('/home', methods=['GET'])
 @token_required
-def createGraph(current_user):
-   transs = Transaction.query.filter_by(userId=current_user.id).all()
+def createGraph(currentUser):
+   """
+   7. This function returns a pie chart of sum of expenses per category
+   """
+   # Find all the transaction of current user
+   transs = Transaction.query.filter_by(userId=currentUser.id).all()
 
    dic = {}
+
    for trans in transs:
-      temp = trans.amount
-      print(temp)
-
+      # Check if the transaction is income or expense
+      # Keep only the expenses
       if not trans.income:
-         temp = -1 * temp
-         print(temp)
+         continue
 
-
+      # Add the amount of expense to its category in dictionary
       if trans.category in dic.keys():
          dic[trans.category] = dic[trans.category] + temp
       else:
-         print(temp)
-         dic[trans.category] = temp
+         dic[trans.category] = -1 * trans.amount
 
+   # Create a pie chart for expenses
    fig = plt.figure()
-   ax = fig.add_axes([0,0,1,1])
+   ax = fig.add_axes([0, 0, 1, 1])
    ax.axis('equal')
-   ax.pie(dic.values(), labels = dic.keys() ,autopct='%1.2f%%')
+   ax.pie(dic.values(), labels=dic.keys(), autopct='%1.2f%%')
    fig.savefig('my_plot.png')
 
-   return "<img src='my_plot.png'>"
+   return "<img src='my_plot.png'>", 200
 
 
 @application.route('/home/<int:index>', methods=['GET'])
 def changeMode():
-   return "changeMode"
+   """
+   8. This function change the period of expenses that will be used of the pie
+   """
+   return "changeMode", 200
 
 
 @application.route('/trans', methods=['POST'])
 @token_required
-def addTransaction(current_user):
+def addTransaction(currentUser):
+   """
+   9. This function adds new transaction and commits it to database
+   """
    data = request.get_json()
-
    newTransaction = Transaction(amount=data['amount'],
                                 income=data['income'],
                                 date=datetime.utcnow(),
                                 category=data['category'],
-                                userId=current_user.id)
-
+                                userId=currentUser.id)
+   # Commit new transaction 
    db.session.add(newTransaction)
    db.session.commit()
 
-   return jsonify({'message': "Transaction saved!"})
+   return jsonify({'message': "Transaction saved!"}), 201
 
 
 @application.route('/trans/<trans_id>', methods=['DELETE'])
 @token_required
-def removeTransaction(current_user, trans_id):
-   trans = Transaction.query.filter_by(id=trans_id, userId=current_user.id).first()
-
+def removeTransaction(currentUser, trans_id):
+   """
+   10. This function removes a transaction from database
+   """
+   trans = Transaction.query.filter_by(id=trans_id, userId=currentUser.id).first()
+   
+   # Delete the transaction, if it exists 
    if not trans:
       return jsonify({'message': 'No transaction found!'})
-
    db.session.delete(trans)
    db.session.commit()
 
-   return jsonify({'message': 'The transaction removed'})
+   return jsonify({'message': 'The transaction removed'}), 200
 
 
 @application.route('/trans/<trans_id>', methods=['GET'])
 @token_required
-def getOneTransaction(current_user, trans_id):
-   trans = Transaction.query.filter_by(id=trans_id, userId=current_user.id).first()
-
+def getOneTransaction(currentUser, trans_id):
+   """
+   11. This function returns one specific transaction
+   """
+   trans = Transaction.query.filter_by(id=trans_id, userId=currentUser.id).first()
+   # Collect necessary information for the transaction to display 
    transactionData = {'amount': trans.amount}
    if not trans.income:
       transactionData['amount'] = -1 * transactionData['amount']
    transactionData['date'] = trans.date
    transactionData['category'] = trans.category
 
-   return jsonify({'transaction': transactionData})
+   return jsonify({'transaction': transactionData}), 200
 
 
 @application.route('/trans/', methods=['GET'])
 @token_required
-def getAllTransactions(current_user):
-   transs = Transaction.query.filter_by(userId=current_user.id).all()
-
+def getAllTransactions(currentUser):
+   """
+   12. This function returns all the transactions
+   """
+   transs = Transaction.query.filter_by(userId=currentUser.id).all()
+   
+   # Collect necessary information for each transaction to display 
    output = []
    for trans in transs:
       transactionData = {'amount': trans.amount}
@@ -255,7 +278,7 @@ def getAllTransactions(current_user):
       transactionData['ID'] = trans.id
       output.append(transactionData)
 
-   return jsonify({'transactions': output})
+   return jsonify({'transactions': output}), 200
 
 
 if __name__ == '__main__':
