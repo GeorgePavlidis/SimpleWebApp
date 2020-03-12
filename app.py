@@ -1,13 +1,15 @@
-from flask import Flask, jsonify, request, redirect, make_response, g
+import os
+from flask import Flask, jsonify, request, redirect, make_response
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import uuid
 from matplotlib import pyplot as plt
-from . import User, Transaction, application, db
+from __init__ import User, Transaction, application, db
 from middleware import token_required
 
-
+# Graph mode
+MODE = 4
 # ==================================================================================================
 # Entry Points
 # ==================================================================================================
@@ -73,7 +75,7 @@ def getAllUsers():
    return jsonify({'users': output}), 200
 
 
-@application.route('/user/<int:int:id>', methods=['DELETE'])
+@application.route('/user/<int:id>', methods=['DELETE'])
 @token_required
 def deleteUser(currentUser, id):
    """
@@ -147,33 +149,53 @@ def createGraph(currentUser):
    transs = Transaction.query.filter_by(userId=currentUser.id).all()
 
    dic = {}
-
    for trans in transs:
       # Check if the transaction is income or expense
       # Keep only the expenses
-      if not trans.income:
+      if trans.income:
+         continue
+
+      # Create a flag which indicate if the expense is in valid period
+      inDateFlag = True
+      if not application.config['MODE'] == 4:
+         if application.config['MODE'] ==3:
+            inDateFlag = datetime.utcnow().year == trans.date.year
+         elif application.config['MODE']==2:
+            inDateFlag = datetime.utcnow().year == trans.date.year \
+                     and datetime.utcnow().month == trans.date.month
+         elif application.config['MODE']==1:
+            inDateFlag = datetime.utcnow().date() == trans.date.date()
+      print(application.config['MODE'], inDateFlag)
+      # Check if the transaction is in valid period of time 
+      if not inDateFlag:
          continue
 
       # Add the amount of expense to its category in dictionary
       if trans.category in dic.keys():
-         dic[trans.category] = dic[trans.category] + temp
+         dic[trans.category] = dic[trans.category] + trans.amount
       else:
-         dic[trans.category] = -1 * trans.amount
+         dic[trans.category] = trans.amount
 
    # Create a pie chart for expenses
    fig = plt.figure()
-   ax.pie(dic.values(), labels=dic.keys(), autopct='%1.2f%%')
+   plt.pie(dic.values(), labels=dic.keys(), autopct='%1.2f%%')
    fig.savefig('my_plot.png')
+   cwd = os.getcwd()
+   return "<img src='"+ cwd +"/my_plot.png'>", 200
 
-   return "<img src='my_plot.png'>", 200
 
-
-@application.route('/home/<int:index>', methods=['GET'])
-def changeMode():
+@application.route('/home/<int:index>', methods=['POST'])
+def changeMode(index):
    """
    8. This function change the period of expenses that will be used of the pie
+      MODE = 4 ==> OVERALL
+      MODE = 3 ==> (YEAR, MONTH, DAY)
+      MODE = 2 ==> (MONTH, DAY)
+      MODE = 2 ==> (DAY)
    """
-   return "changeMode", 200
+   application.config['MODE'] = index
+
+   return "Mode Changed", 200
 
 
 @application.route('/trans', methods=['POST'])

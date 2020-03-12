@@ -1,7 +1,7 @@
 from flask import jsonify, request, g
 from functools import wraps
 import jwt
-from . import User
+from __init__ import User, application
 
 
 def token_required(f):
@@ -13,15 +13,19 @@ def token_required(f):
       """
       token = None
 
-      # Check is there are token in request header
-      if 'token' in request.headers:
-         token = request.headers['token']
+      if 'token' in request.args:
+         token = request.args.get('token')
       else:
          return jsonify({'message': 'Token is missing!'}), 401
+      # Check is there are token in request header
+      # if 'token' in request.headers:
+      #    token = request.headers['token']
+      # else:
+      #    return jsonify({'message': 'Token is missing!'}), 401
 
       try:
          # Decode the token using the secret key and check if the user exists in database
-         data = jwt.decode(token, g.token)
+         data = jwt.decode(token, application.config['SECRET_KEY'] )
          currentUser = User.query.filter_by(publicId=data['publicId']).first()
       except:
          return jsonify({'message': 'Token is invalid!'}), 401

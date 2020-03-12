@@ -1,5 +1,7 @@
 from flask import Flask, g
 from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+
 
 # ==================================================================================================
 # Application Initialization
@@ -8,8 +10,8 @@ application = Flask(__name__)
 application.config['SQLALCHEMY_TRACK_MODIFICATIONS '] = False
 application.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mydb.db'
 db = SQLAlchemy(application)
-g.token = 'thisissecret'
-application.config['SECRET_KEY'] = g.token
+application.config['SECRET_KEY'] = 'thisissecret'
+application.config['MODE'] = 4
 
 
 # ==================================================================================================
