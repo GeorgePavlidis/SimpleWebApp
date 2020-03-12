@@ -17,28 +17,35 @@ __This application contains__:
 - 11 Entry points:
 
     1. ```@application.route('/user', methods=['POST'])```:
+      
       This function create new user and commit it to database
 
 
     2. ```@application.route('/user/<int:id>', methods=['GET'])```:
-        This function return publicID, username and password of specific user.
+       
+       This function return publicID, username and password of specific user.
            NO Authorization is needed!
 
     3. ```@application.route('/user/', methods=['GET'])```: 
+         
          This function return ID, publicID, username and password of all users.
           NO Authorization is needed!
 
     4. ```@application.route('/login')```: 
-          This function login a user and create a token for 30 minutes
+         
+         This function login a user and create a token for 30 minutes
 
     5. ```@application.route('/user', methods=['POST'])```: 
-          This function create new user and commit it to database
+         
+         This function create new user and commit it to database
 
     6. ```@application.route('/home', methods=['GET'])```: 
-          This function returns a pie chart of sum of expenses per category
+         
+         This function returns a pie chart of sum of expenses per category
 
     7. ```@application.route('/home/<int:index>', methods=['POST'])```:
-          This function change the period of expenses that will be used of the pie
+         
+         This function change the period of expenses that will be used of the pie
 
           ```
           MODE = 4 ==> OVERALL
@@ -48,15 +55,19 @@ __This application contains__:
           ```
 
     8. ```@application.route('/trans', methods=['POST']))```: 
-          This function adds new transaction and commits it to database
+         
+         This function adds new transaction and commits it to database
 
     9. ```@application.route('/trans/<trans_id>', methods=['DELETE'])```:
-          This function removes a transaction from database
+         
+         This function removes a transaction from database
 
     10. ```@application.route('/trans/<trans_id>', methods=['GET'])```: 
+           
            This function returns one specific transaction
 
     11. ```@application.route('/trans/', methods=['GET'])```: 
+           
            This function returns all the transactions
            
            
