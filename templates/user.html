@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+{% block content %}
+<h3>All Users</h3>
+    {% for user in users %}
+       <h4>{{ user.username }}</h4>
+        <article>
+          <ul class="list-group">
+            <div class="col-md-4">
+               Password: <a class="mr-2" href="#">{{ user.username }}</a>
+            </div>
+            <div class="col-md-8">
+              Public ID: <a class="text-muted">{{ user.publicId }}</a>
+            </div>
+            <div>
+              
+            </div>
+          </ul>
+        </article>
+    {% endfor %}
+{% endblock content %}
